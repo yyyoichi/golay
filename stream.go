@@ -1,5 +1,9 @@
 package golay
 
+import (
+	"slices"
+)
+
 // Encoder encodes data into Golay(23,12) codewords.
 // Supports writing data in various formats and retrieves encoded codewords.
 type Encoder struct {
@@ -23,7 +27,20 @@ func NewEncoder() *Encoder {
 //	enc.WriteBytes(48, []byte{0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC})
 //	// 48 bits → 4 blocks (48 bits exactly)
 func (e *Encoder) WriteBytes(bits int, data []byte) error {
-	// TODO: Implementation
+	n := (bits + 11) / 12
+	e.blocks = slices.Grow(e.blocks, n)
+	for i := range n {
+		start := min(i*12, bits)
+		end := min(start+12, bits)
+		var block uint16 = 0
+		for j := start; j < end; j++ {
+			block <<= 1
+			if data[j/8]&byte(1<<(7-(j%8))) != 0 {
+				block |= 1
+			}
+		}
+		e.blocks = append(e.blocks, EncodeWord(block))
+	}
 	return nil
 }
 
@@ -37,7 +54,20 @@ func (e *Encoder) WriteBytes(bits int, data []byte) error {
 //	enc.WriteU64s(112, 0x123456789ABCDEF0, 0xFEDCBA9876543210)
 //	// 112 bits → 10 blocks (120 bits with 8-bit padding)
 func (e *Encoder) WriteU64s(bits int, data ...uint64) error {
-	// TODO: Implementation
+	n := (bits + 11) / 12
+	e.blocks = slices.Grow(e.blocks, n)
+	for i := range n {
+		start := min(i*12, bits)
+		end := min(start+12, bits)
+		var block uint16 = 0
+		for j := start; j < end; j++ {
+			block <<= 1
+			if (data[j/64] & (1 << (63 - (j % 64)))) != 0 {
+				block |= 1
+			}
+		}
+		e.blocks = append(e.blocks, EncodeWord(block))
+	}
 	return nil
 }
 
@@ -50,7 +80,21 @@ func (e *Encoder) WriteU64s(bits int, data ...uint64) error {
 //
 //	enc.WriteBools(true, false, true, true, false, ...)
 func (e *Encoder) WriteBools(data ...bool) error {
-	// TODO: Implementation
+	bits := len(data)
+	n := (bits + 11) / 12
+	e.blocks = slices.Grow(e.blocks, n)
+	for i := range n {
+		start := i * 12
+		end := min(start+12, bits)
+		var block uint16 = 0
+		for j := start; j < end; j++ {
+			block <<= 1
+			if data[j] {
+				block |= 1
+			}
+		}
+		e.blocks = append(e.blocks, EncodeWord(block))
+	}
 	return nil
 }
 
@@ -72,7 +116,17 @@ func (e *Encoder) Codewords() []uint32 {
 //
 // Total bytes = ceil(total_bits / 8)
 func (e *Encoder) Bytes() []byte {
-	// TODO: Implementation
+	bits := e.Bits()
+	total := (bits + 7) / 8
+	result := make([]byte, total)
+	for i, cw := range e.blocks {
+		bitPos := i * 23
+		for j := range 23 {
+			if (cw & (1 << (22 - j))) != 0 {
+				result[(bitPos+j)/8] |= byte(1 << ((bitPos + j) % 8))
+			}
+		}
+	}
 	return nil
 }
 
@@ -80,7 +134,16 @@ func (e *Encoder) Bytes() []byte {
 // Each boolean represents one bit, packed continuously without padding.
 // The length of the returned slice is (number of codewords × 23).
 func (e *Encoder) Bools() []bool {
-	// TODO: Implementation
+	bits := e.Bits()
+	result := make([]bool, bits)
+	for i, cw := range e.blocks {
+		bitPos := i * 23
+		for j := range 23 {
+			if (cw & (1 << (22 - j))) != 0 {
+				result[bitPos+j] = true
+			}
+		}
+	}
 	return nil
 }
 
@@ -94,8 +157,18 @@ func (e *Encoder) Bools() []bool {
 //
 // Total elements = ceil(total_bits / 64)
 func (e *Encoder) Uint64s() []uint64 {
-	// TODO: Implementation
-	return nil
+	bits := e.Bits()
+	total := (bits + 63) / 64
+	result := make([]uint64, total)
+	for i, cw := range e.blocks {
+		bitPos := i * 23
+		for j := range 23 {
+			if (cw & (1 << (22 - j))) != 0 {
+				result[(bitPos+j)/64] |= uint64(1 << ((bitPos + j) % 64))
+			}
+		}
+	}
+	return result
 }
 
 // Bits returns the total number of encoded bits.
@@ -110,17 +183,16 @@ func (e *Encoder) Reset() {
 }
 
 // Decoder decodes Golay(23,12) codewords with error correction.
-// Receives encoded data, decodes it, and allows reading decoded data in various formats.
+// Receives encoded data via Write methods, decodes it with error correction,
+// and provides decoded data in various formats.
 type Decoder struct {
 	decoded []uint16 // Decoded 12-bit data blocks
-	pos     int      // Current reading position in bits
 }
 
 // NewDecoder creates a new Decoder instance.
 func NewDecoder() *Decoder {
 	return &Decoder{
 		decoded: make([]uint16, 0),
-		pos:     0,
 	}
 }
 
@@ -142,7 +214,20 @@ func (d *Decoder) WriteCodewords(codewords ...uint32) error {
 //
 //	dec.WriteBytes(184, encodedBytes)  // 184 bits = 8 codewords
 func (d *Decoder) WriteBytes(bits int, data []byte) error {
-	// TODO: Implementation
+	l := len(data) * 8
+	n := bits / 23
+	for i := range n {
+		var cw uint32 = 0
+		start := min(i*23, l)
+		end := min(start+23, l)
+		for j := start; j < end; j++ {
+			cw <<= 1
+			if (data[j/8] & byte(1<<7-(j%8))) != 0 {
+				cw |= 1
+			}
+		}
+		d.decoded = append(d.decoded, Decode(cw))
+	}
 	return nil
 }
 
@@ -155,7 +240,20 @@ func (d *Decoder) WriteBytes(bits int, data []byte) error {
 //
 //	dec.WriteUint64s(184, data...)  // 184 bits = 8 codewords
 func (d *Decoder) WriteUint64s(bits int, data ...uint64) error {
-	// TODO: Implementation
+	l := len(data) * 64
+	n := bits / 23
+	for i := range n {
+		var cw uint32 = 0
+		start := min(i*23, l)
+		end := min(start+23, l)
+		for j := start; j < end; j++ {
+			cw <<= 1
+			if (data[j/64] & (1 << (63 - (j % 64)))) != 0 {
+				cw |= 1
+			}
+		}
+		d.decoded = append(d.decoded, Decode(cw))
+	}
 	return nil
 }
 
@@ -168,39 +266,89 @@ func (d *Decoder) WriteUint64s(bits int, data ...uint64) error {
 //
 //	dec.WriteBools(bools...)  // len(bools) must be multiple of 23
 func (d *Decoder) WriteBools(data ...bool) error {
-	// TODO: Implementation
+	bits := len(data)
+	n := bits / 23
+	for i := range n {
+		var cw uint32 = 0
+		start := i * 23
+		end := start + 23
+		for j := start; j < end; j++ {
+			cw <<= 1
+			if data[j] {
+				cw |= 1
+			}
+		}
+		d.decoded = append(d.decoded, Decode(cw))
+	}
 	return nil
 }
 
-// ReadU64s decodes and reads the specified number of bits as uint64 values.
-// Applies error correction to each codeword before extracting data.
-// Returns decoded data packed into uint64 slice.
+// Bytes returns all decoded data as a byte slice.
+// Data is packed from MSB (left-aligned) continuously across byte boundaries.
+// Returns the complete decoded data.
 //
 // Example:
 //
-//	data, err := dec.ReadU64s(112)
-//	// Returns ~2 uint64 values containing 112 bits of data
-func (d *Decoder) ReadU64s(bits int) ([]uint64, error) {
-	// TODO: Implementation
-	return nil, nil
+//	data, err := dec.Bytes()
+//	// Returns all decoded bits packed into bytes
+func (d *Decoder) Bytes() ([]byte, error) {
+	bits := d.Bits()
+	total := (bits + 7) / 8
+	result := make([]byte, total)
+	for i, block := range d.decoded {
+		bitPos := i * 12
+		for j := range 12 {
+			if (block & (1 << (11 - j))) != 0 {
+				result[(bitPos+j)/8] |= byte(1 << ((bitPos + j) % 8))
+			}
+		}
+	}
+	return result, nil
 }
 
-// ReadBools decodes and reads the specified number of bits as booleans.
-// Applies error correction to each codeword before extracting data.
+// Uint64s returns all decoded data as a uint64 slice.
+// Data is packed from MSB (left-aligned) continuously across uint64 boundaries.
+// Returns the complete decoded data.
 //
 // Example:
 //
-//	data, err := dec.ReadBools(24)
-//	// Returns 24 boolean values
-func (d *Decoder) ReadBools(bits int) ([]bool, error) {
-	// TODO: Implementation
-	return nil, nil
+//	data, err := dec.Uint64s()
+//	// Returns all decoded bits packed into uint64 values
+func (d *Decoder) Uint64s() ([]uint64, error) {
+	bits := d.Bits()
+	total := (bits + 63) / 64
+	result := make([]uint64, total)
+	for i, block := range d.decoded {
+		bitPos := i * 12
+		for j := range 12 {
+			if (block & (1 << (11 - j))) != 0 {
+				result[(bitPos+j)/64] |= uint64(1 << ((bitPos + j) % 64))
+			}
+		}
+	}
+	return result, nil
 }
 
-// ReadAll returns all decoded data blocks.
-// Each element represents one decoded 12-bit block.
-func (d *Decoder) ReadAll() []uint16 {
-	return d.decoded
+// Bools returns all decoded data as a boolean slice.
+// Each boolean represents one decoded bit.
+// Returns the complete decoded data.
+//
+// Example:
+//
+//	data, err := dec.Bools()
+//	// Returns all decoded bits as boolean values
+func (d *Decoder) Bools() ([]bool, error) {
+	bits := d.Bits()
+	result := make([]bool, bits)
+	for i, block := range d.decoded {
+		bitPos := i * 12
+		for j := range 12 {
+			if (block & (1 << (11 - j))) != 0 {
+				result[bitPos+j] = true
+			}
+		}
+	}
+	return result, nil
 }
 
 // Bits returns the total number of decoded bits.
@@ -209,13 +357,7 @@ func (d *Decoder) Bits() int {
 	return len(d.decoded) * 12
 }
 
-// Reset clears all decoded data and resets the reading position.
+// Reset clears all decoded data.
 func (d *Decoder) Reset() {
 	d.decoded = d.decoded[:0]
-	d.pos = 0
-}
-
-// Remaining returns the number of unread bits.
-func (d *Decoder) Remaining() int {
-	return d.Bits() - d.pos
 }
