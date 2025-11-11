@@ -1,7 +1,11 @@
 package golay
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
+
+	"github.com/yyyoichi/bitstream-go"
 )
 
 func TestStream(t *testing.T) {
@@ -66,5 +70,34 @@ func TestStream(t *testing.T) {
 				t.Errorf("DecodeBinay uint16 failed: got %#x, want %#x", v[0], 0xFFF0)
 			}
 		}
+	})
+	t.Run("RoundTrip", func(t *testing.T) {
+		for range 100 {
+			var w = bitstream.NewBitWriter[uint8](0, 0)
+			l := rand.Intn(0xFFFF)
+			for range l {
+				w.U8(0, 8, uint8(rand.Intn(255)))
+			}
+			testdata, bits := w.Data()
+			var encoded []uint8
+			enc := NewEncoder(testdata, bits)
+			_ = enc.Encode(&encoded)
+			encodedBits := enc.Bits()
+			var decoded []uint8
+			dec := NewDecoder(encoded, encodedBits)
+			_ = dec.Decode(&decoded)
+
+			want := bitstream.NewBitReader(testdata, 0, 0)
+			got := bitstream.NewBitReader(decoded, 0, 0)
+			for i := range l {
+				bitWant := want.U8R(0, 8)
+				bitGot := got.U8R(0, 8)
+				if bitWant != bitGot {
+					t.Fatalf("RoundTrip failed at index %d: got %#x, want %#x", i, bitGot, bitWant)
+				}
+			}
+			fmt.Print("o")
+		}
+		fmt.Println()
 	})
 }
