@@ -93,3 +93,81 @@ func (e *Encoder[T]) Encode(v any) error {
 	rv.Elem().Set(reflect.ValueOf(data))
 	return nil
 }
+
+// DecodeBinay performs Golay decoding on MSB-aligned data by splitting it into 23-bit blocks
+// and stores the result in v. Each 23-bit Golay codeword is decoded into a 12-bit data block.
+func DecodeBinay[I, O BinaryValue](data []I, v *[]O) error {
+	decoder := NewDecoder(data, 0)
+	return decoder.Decode(v)
+}
+
+// Decoder performs Golay decoding on MSB-aligned binary data.
+// It splits the input data into 23-bit blocks and decodes each block
+// into a 12-bit data value.
+type Decoder[T BinaryValue] struct {
+	reader *bitstream.BitReader[T]
+}
+
+// NewDecoder creates a new Decoder for MSB-aligned data.
+// The bits parameter specifies how many bits in the input data are valid.
+// For example, if data contains 64-bit values but only 23 bits are valid,
+// setting bits=23 results in only one Golay decoding operation instead of two.
+func NewDecoder[T BinaryValue](data []T, bits int) *Decoder[T] {
+	reader := bitstream.NewBitReader(data, 0, 0)
+	if bits > 0 {
+		reader.SetBits(bits)
+	}
+	return &Decoder[T]{
+		reader: reader,
+	}
+}
+
+// Decode performs Golay decoding and stores the result in v.
+// v must be a pointer to a slice of BinaryValue type.
+// The output type can be flexibly specified (e.g., *[]uint32, *[]uint8).
+func (d *Decoder[T]) Decode(v any) error {
+	if v == nil {
+		return errors.New("v must not be nil")
+	}
+	// Type check: ensure v is a pointer
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr {
+		return errors.New("v must be a pointer to a slice")
+	}
+	// Ensure the pointer points to a slice
+	elem := rv.Elem()
+	if elem.Kind() != reflect.Slice {
+		return errors.New("v must be a pointer to a slice")
+	}
+	var writer interface {
+		U16(int, int, uint16)
+		AnyData() (any, int)
+	}
+	elemType := elem.Type().Elem()
+	switch elemType.Kind() {
+	case reflect.Uint64:
+		writer = bitstream.NewBitWriter[uint64](0, 0)
+	case reflect.Uint32:
+		writer = bitstream.NewBitWriter[uint32](0, 0)
+	case reflect.Uint16:
+		writer = bitstream.NewBitWriter[uint16](0, 0)
+	case reflect.Uint8:
+		writer = bitstream.NewBitWriter[uint8](0, 0)
+	case reflect.Uint:
+		writer = bitstream.NewBitWriter[uint](0, 0)
+	default:
+		// Ensure the slice element type satisfies BinaryValue constraint
+		return errors.New("slice element type must satisfy BinaryValue constraint")
+	}
+
+	numBlocks := (d.reader.Bits() + 22) / 23
+	for i := range numBlocks {
+		cw := d.reader.U32R(23, i)
+		b := Decode(cw)
+		// right 12 bits are data
+		writer.U16(4, 12, b)
+	}
+	data, _ := writer.AnyData()
+	rv.Elem().Set(reflect.ValueOf(data))
+	return nil
+}

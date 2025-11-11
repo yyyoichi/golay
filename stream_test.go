@@ -31,3 +31,34 @@ func TestEncoder(t *testing.T) {
 		}
 	}
 }
+
+func TestDecoder(t *testing.T) {
+	{
+		var v []uint16
+		// 32bit -> 2block -> 24bit -> 2 uint16
+		_ = DecodeBinay([]uint32{0xFFFFFE00, 0}, &v)
+		if len(v) != 3 {
+			t.Fatalf("DecodeBinay uint32 failed: got length %d, want %d", len(v), 3)
+		}
+		if v[0] != 0xFFF0 {
+			t.Errorf("DecodeBinay uint16 failed: got %#x, want %#x", v[0], 0xFFF0)
+		}
+		if v[1] != 0 {
+			t.Errorf("DecodeBinay uint16 failed: got %#x, want %#x", v[1], 0)
+		}
+		if v[2] != 0 {
+			t.Errorf("DecodeBinay uint16 failed: got %#x, want %#x", v[2], 0)
+		}
+	}
+	{
+		var v []uint16
+		// 23bit -> 1block -> 12bit -> 1 uint16
+		_ = NewDecoder([]uint32{0xFFFFFE00, 0}, 23).Decode(&v)
+		if len(v) != 1 {
+			t.Fatalf("DecodeBinay uint32 failed: got length %d, want %d", len(v), 1)
+		}
+		if v[0] != 0xFFF0 {
+			t.Errorf("DecodeBinay uint16 failed: got %#x, want %#x", v[0], 0xFFF0)
+		}
+	}
+}
