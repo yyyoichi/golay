@@ -30,6 +30,31 @@ received := codeword ^ 0b111 // Introduce 3-bit error
 decoded := golay.Decode(received)      // Returns original data
 ```
 
+### Stream Processing
+
+For processing binary data streams, this package provides `Encoder` and `Decoder` as a use case example. These work with MSB-aligned data and handle automatic blocking:
+
+```go
+// Encode a stream of bytes
+data := []uint8{0xFF, 0xF0, 0xAB}
+var encoded []uint32
+encoder := golay.NewEncoder(data, 0) // 0 means use all bits
+err := encoder.Encode(&encoded)
+
+// Decode back to original data
+var decoded []uint8
+decoder := golay.NewDecoder(encoded, encoder.Bits())
+err = decoder.Decode(&decoded)
+
+// Convenience functions are also available
+var encoded []uint32
+golay.EncodeBinay(data, &encoded)
+var decoded []uint8
+golay.DecodeBinay(encoded, &decoded)
+```
+
+The encoder splits input data into 12-bit blocks and encodes each into a 23-bit codeword. The decoder reverses this process with automatic error correction.
+
 ## Implementation
 
 This implementation is based on the generator and parity check matrices from:
