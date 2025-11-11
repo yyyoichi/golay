@@ -94,6 +94,13 @@ func (e *Encoder[T]) Encode(v any) error {
 	return nil
 }
 
+// Bits returns the total number of bits in the encoded output.
+// This method rounds up to encode as many blocks as possible.
+// For example, 13 bits of input data will be encoded as 2 blocks (23 bits × 2 = 46 bits).
+func (e *Encoder[T]) Bits() int {
+	return (e.reader.Bits() + 11) / 12 * 23
+}
+
 // DecodeBinay performs Golay decoding on MSB-aligned data by splitting it into 23-bit blocks
 // and stores the result in v. Each 23-bit Golay codeword is decoded into a 12-bit data block.
 func DecodeBinay[I, O BinaryValue](data []I, v *[]O) error {
@@ -110,6 +117,7 @@ type Decoder[T BinaryValue] struct {
 
 // NewDecoder creates a new Decoder for MSB-aligned data.
 // The bits parameter specifies how many bits in the input data are valid.
+// It expects bits to be a multiple of 23; any remainder will be ignored.
 // For example, if data contains 64-bit values but only 23 bits are valid,
 // setting bits=23 results in only one Golay decoding operation instead of two.
 func NewDecoder[T BinaryValue](data []T, bits int) *Decoder[T] {
@@ -160,7 +168,7 @@ func (d *Decoder[T]) Decode(v any) error {
 		return errors.New("slice element type must satisfy BinaryValue constraint")
 	}
 
-	numBlocks := (d.reader.Bits() + 22) / 23
+	numBlocks := d.reader.Bits() / 23
 	for i := range numBlocks {
 		cw := d.reader.U32R(23, i)
 		b := Decode(cw)
@@ -170,4 +178,12 @@ func (d *Decoder[T]) Decode(v any) error {
 	data, _ := writer.AnyData()
 	rv.Elem().Set(reflect.ValueOf(data))
 	return nil
+}
+
+// Bits returns the total number of bits in the decoded output.
+// This method decodes only complete 23-bit blocks, discarding any incomplete data.
+// For example, 48 bits of input data will be decoded as 2 blocks (12 bits × 2 = 24 bits),
+// and the remaining 2 bits will be ignored.
+func (d *Decoder[T]) Bits() int {
+	return d.reader.Bits() / 23 * 12
 }
