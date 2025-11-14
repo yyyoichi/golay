@@ -76,9 +76,10 @@ func TestStream(t *testing.T) {
 			var w = bitstream.NewBitWriter[uint8](0, 0)
 			l := rand.Intn(0xFFFF)
 			for range l {
-				w.U8(0, 8, uint8(rand.Intn(255)))
+				w.Write8(0, 8, uint8(rand.Intn(255)))
 			}
-			testdata, bits := w.Data()
+			testdata := w.Data()
+			bits := w.Bits()
 			var encoded []uint8
 			enc := NewEncoder(testdata, bits)
 			_ = enc.Encode(&encoded)
@@ -90,8 +91,8 @@ func TestStream(t *testing.T) {
 			want := bitstream.NewBitReader(testdata, 0, 0)
 			got := bitstream.NewBitReader(decoded, 0, 0)
 			for i := range l {
-				bitWant := want.U8R(0, 8)
-				bitGot := got.U8R(0, 8)
+				bitWant := want.Read8R(0, 8)
+				bitGot := got.Read8R(0, 8)
 				if bitWant != bitGot {
 					t.Fatalf("RoundTrip failed at index %d: got %#x, want %#x", i, bitGot, bitWant)
 				}

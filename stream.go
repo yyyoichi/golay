@@ -59,8 +59,8 @@ func (e *Encoder[T]) Encode(v any) error {
 		return errors.New("v must be a pointer to a slice")
 	}
 	var writer interface {
-		U16(int, int, uint16)
-		AnyData() (any, int)
+		Write16(int, int, uint16)
+		AnyData() any
 	}
 	elemType := elem.Type().Elem()
 	switch elemType.Kind() {
@@ -81,15 +81,15 @@ func (e *Encoder[T]) Encode(v any) error {
 
 	numBlocks := (e.reader.Bits() + 11) / 12
 	for i := range numBlocks {
-		b := e.reader.U16R(12, i)
+		b := e.reader.Read16R(12, i)
 		// right 12 bits are data
-		writer.U16(4, 12, b)
+		writer.Write16(4, 12, b)
 		p := Encode(b)
 		// right 11 bits are parity
-		writer.U16(5, 11, p)
+		writer.Write16(5, 11, p)
 	}
 
-	data, _ := writer.AnyData()
+	data := writer.AnyData()
 	rv.Elem().Set(reflect.ValueOf(data))
 	return nil
 }
@@ -148,8 +148,8 @@ func (d *Decoder[T]) Decode(v any) error {
 		return errors.New("v must be a pointer to a slice")
 	}
 	var writer interface {
-		U16(int, int, uint16)
-		AnyData() (any, int)
+		Write16(int, int, uint16)
+		AnyData() any
 	}
 	elemType := elem.Type().Elem()
 	switch elemType.Kind() {
@@ -170,12 +170,12 @@ func (d *Decoder[T]) Decode(v any) error {
 
 	numBlocks := d.reader.Bits() / 23
 	for i := range numBlocks {
-		cw := d.reader.U32R(23, i)
+		cw := d.reader.Read32R(23, i)
 		b := Decode(cw)
 		// right 12 bits are data
-		writer.U16(4, 12, b)
+		writer.Write16(4, 12, b)
 	}
-	data, _ := writer.AnyData()
+	data := writer.AnyData()
 	rv.Elem().Set(reflect.ValueOf(data))
 	return nil
 }
