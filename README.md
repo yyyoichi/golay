@@ -32,14 +32,19 @@ decoded := golay.Decode(received)      // Returns original data
 
 ### Stream Processing
 
-For processing binary data streams, this package provides `Encoder` and `Decoder` as a use case example. These work with MSB-aligned data and handle automatic blocking:
+For processing binary data streams, this package provides `Encoder` and `Decoder` that work with MSB-aligned data and handle automatic blocking:
 
 ```go
 // Encode a stream of bytes
 data := []uint8{0xFF, 0xF0, 0xAB}
 var encoded []uint32
-encoder := golay.NewEncoder(data, 0) // 0 means use all bits
-err := encoder.Encode(&encoded)
+encoder := golay.NewEncoder(&encoded)
+err := encoder.Encode(data, 0) // 0 means use all bits
+fmt.Println(encoder.Bits())    // Get total encoded bits
+
+// Multiple encodes can append to the same output
+moreData := []uint8{0x12, 0x34}
+err = encoder.Encode(moreData, 0)
 
 // Decode back to original data
 var decoded []uint8
@@ -51,9 +56,14 @@ var encoded []uint32
 golay.EncodeBinay(data, &encoded)
 var decoded []uint8
 golay.DecodeBinay(encoded, &decoded)
+
+// Calculate encoded/decoded sizes
+inputBits := 100
+encodedBits := golay.EncodedBits(inputBits)   // Returns 184 (8 blocks × 23 bits)
+decodedBits := golay.DecodedBits(encodedBits) // Returns 96 (8 blocks × 12 bits)
 ```
 
-The encoder splits input data into 12-bit blocks and encodes each into a 23-bit codeword. The decoder reverses this process with automatic error correction.
+The encoder holds a writer internally and can append multiple encode operations to the same output slice. The encoder splits input data into 12-bit blocks and encodes each into a 23-bit codeword. The decoder reverses this process with automatic error correction.
 
 ## Implementation
 
